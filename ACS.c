@@ -38,6 +38,7 @@ long safe_str2long(char* str){
 	errno = 0;
 	long ret = strtol(str, &tmp, 10);
 	if (errno || ret < 0)	return -1;
+	return ret;
 }
 
 double getCurrentSimulationTime(){
@@ -49,8 +50,10 @@ double getCurrentSimulationTime(){
 	pthread_mutex_unlock(&start_time_lock);
 	
 	gettimeofday(&cur_time, NULL);
+	pthread_mutex_lock(&start_time_lock);
 	cur_secs = (cur_time.tv_sec + (double) cur_time.tv_usec / 1000000);
-	
+	pthread_mutex_unlock(&start_time_lock);
+
 	return cur_secs - init_secs;
 }
 
@@ -64,7 +67,7 @@ void * customer_entry(void * cus_info){
 	pthread_mutex_unlock(&calling_clerk_lock);
 
 	struct customer_info * p_myInfo = (struct customer_info *) cus_info;
-	usleep(p_myInfo->arrival_time);
+	sleep(p_myInfo->arrival_time / 10);
 	fprintf(stdout, "A customer arrives: customer ID %2d. \n", p_myInfo->user_id);
 	
 	double wait_start_time = getCurrentSimulationTime();
@@ -74,8 +77,10 @@ void * customer_entry(void * cus_info){
 	else {
 		pthread_mutex_lock(&queue_econ_lock);
 	}
-	
+	pthread_mutex_lock(&queue_len_lock);
 	queue_length[p_myInfo->class_type]++;
+	pthread_mutex_unlock(&queue_len_lock);
+
 	fprintf(stdout, "A customer enters a queue: %1d, this queue length is now %2d. \n", p_myInfo->class_type, queue_length[p_myInfo->class_type]);
 	
 	if (p_myInfo->class_type == 1){
@@ -101,7 +106,7 @@ void * customer_entry(void * cus_info){
 
 	fprintf(stdout, "A clerk starts serving a customer: start time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_start_time, p_myInfo->user_id, calling_clerk);
 	
-	usleep(p_myInfo->service_time);
+	sleep(p_myInfo->service_time / 10);
 	
 	double service_end_time = getCurrentSimulationTime();
 	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_end_time, p_myInfo->user_id, calling_clerk);
@@ -122,7 +127,10 @@ void *clerk_entry(void * clerkNum){
 
 	while(1){
 		// clerk is idle now
-
+		// If both queues are empty do nothing
+		if(queue_length[0] == 0 && queue_length[1] == 0){
+			continue;
+		}
 		pthread_mutex_lock(&queue_len_lock);		
 		pthread_cond_t * selected_queue_cond = (queue_length[1] == 0) ? &queue_econ : &queue_biz;
 		pthread_mutex_t * selected_queue_mtx = (queue_length[1] == 0) ? &queue_econ_lock : &queue_biz_lock;
@@ -159,8 +167,8 @@ int main(int argc, char *argv[]) {
 		pthread_mutex_init(&queue_biz_lock, NULL) != 0 &&
 		pthread_mutex_init(&calling_clerk_lock, NULL) != 0)
 	{
-			printf("\n Mutex init failed\n");
-			exit(EXIT_FAILURE);
+		printf("\n Mutex init failed\n");
+		exit(EXIT_FAILURE);
     }
 
 	if (argc != 2){
@@ -170,10 +178,11 @@ int main(int argc, char *argv[]) {
 
 	// Parse input and build needed data structures
 	fp = fopen(argv[1], "r");
-	if (fp == NULL)
+	if (fp == NULL){
 		printf("Error opening file. Check that it exists.\n");
 		exit(EXIT_FAILURE);
-
+	}
+		
 	// Fist line has a different format, parse it seperately
 	getline(&line, &len, fp);
 	NCustomers = safe_str2long(line);
@@ -188,7 +197,7 @@ int main(int argc, char *argv[]) {
 	// Parse all customers into a struct array
 	int i = 0;
 	while ((getline(&line, &len, fp)) != -1) {
-		int num_parsed = sscanf("%d:%d,%d,%d", &cus_info[i].user_id, &cus_info[i].class_type, &cus_info[i].arrival_time, &cus_info[i].service_time);
+		int num_parsed = sscanf(line, "%d:%d,%d,%d", &cus_info[i].user_id, &cus_info[i].class_type, &cus_info[i].arrival_time, &cus_info[i].service_time);
 
 		if (num_parsed != 4){
 			printf("Error parsing customers, check input file format.\n");
