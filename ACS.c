@@ -27,9 +27,10 @@ pthread_mutex_t queue_biz_lock;
 pthread_mutex_t calling_clerk_lock;
 pthread_cond_t queue_econ = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queue_biz = PTHREAD_COND_INITIALIZER;
+pthread_cond_t clerk_conds[NCLERKS];
+
 
 // Helpers
-
 
 // Casts str to POSITIVIE long whith error checking
 // Returns -1 on error or if input is negative
@@ -68,7 +69,7 @@ void * customer_entry(void * cus_info){
 	
 	double wait_start_time = getCurrentSimulationTime();
 	pthread_cond_t * selected_queue_cond = (p_myInfo->class_type == 0) ? &queue_econ : &queue_biz;
-	pthread_mutex_t * selected_queue_mtx = (queue_length[1] == 0) ? &queue_econ_lock : &queue_biz_lock;
+	pthread_mutex_t * selected_queue_mtx = (p_myInfo->class_type == 0) ? &queue_econ_lock : &queue_biz_lock;
 
 	pthread_mutex_lock(selected_queue_mtx);
 	
@@ -76,7 +77,7 @@ void * customer_entry(void * cus_info){
 	queue_length[p_myInfo->class_type]++;
 	pthread_mutex_unlock(&queue_len_lock);
 
-	fprintf(stdout, "A customer enters a queue: %1d, this queue length is now %2d. \n", p_myInfo->class_type, queue_length[p_myInfo->class_type]);
+	fprintf(stdout, "Customer %d enters a queue: %1d, this queue length is now %2d. \n", p_myInfo->user_id, p_myInfo->class_type, queue_length[p_myInfo->class_type]);
 
 	// Wait for clerk to be available
 	if(pthread_cond_wait(selected_queue_cond, selected_queue_mtx) != 0){
@@ -107,7 +108,8 @@ void * customer_entry(void * cus_info){
 	double service_end_time = getCurrentSimulationTime();
 	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_end_time, p_myInfo->user_id, clerk);
 	
-	pthread_cond_signal(selected_queue_cond); // Notify the clerk that service is finished, it can serve another customer
+	//fprintf(stdout, "Customer signalling clerk %d", (clerk));
+	pthread_cond_signal(&clerk_conds[(clerk-1)]); // Notify the clerk that service is finished, it can serve another customer
 	
 	pthread_exit(NULL);
 	return NULL;
@@ -120,7 +122,7 @@ void *clerk_entry(void * clerkNum){
 	while(1){
 		// clerk is idle now
 		// If both queues are empty do nothing
-		if(queue_length[0] == 0 && queue_length[1] == 0){
+		if((queue_length[0] == 0) && (queue_length[1] == 0)){
 			continue;
 		}
 		pthread_mutex_lock(&queue_len_lock);		
@@ -128,16 +130,16 @@ void *clerk_entry(void * clerkNum){
 		pthread_mutex_t * selected_queue_mtx = (queue_length[1] == 0) ? &queue_econ_lock : &queue_biz_lock;
 		pthread_mutex_unlock(&queue_len_lock);
 		
-		pthread_mutex_lock(selected_queue_mtx);
+		//pthread_mutex_lock(selected_queue_mtx);
 
-		// Mutex unlocked after customer reads clerk id
-		pthread_mutex_lock(&calling_clerk_lock);
+		pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
 		calling_clerk = *clerk_id;
-		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first) from the longest queue (notice the customer he can get served now)
-		pthread_mutex_unlock(selected_queue_mtx);
+		pthread_cond_signal(selected_queue_cond); // Awake the customer (the one enter into the queue first) from the longest queue (notice the customer he can get served now)
+		//pthread_mutex_unlock(selected_queue_mtx);
 		
-		pthread_cond_wait(selected_queue_cond, selected_queue_mtx); // wait the customer to finish its service, clerk busy
-		//printf("Customer done");
+		//printf("%d",((*clerk_id)-1));
+		pthread_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
+		//printf("\nCustomer done: clerk %d\n", *clerk_id);
 	}
 	
 	pthread_exit(NULL);
@@ -168,6 +170,11 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
     }
 
+	// Initialize clerk conds
+	for(int i=0;i<NCLERKS;i++){
+		pthread_cond_init(&clerk_conds[i], NULL);
+	}
+
 	if (argc != 2){
 		printf("Usage: ACS <file.txt>");
 		exit(EXIT_FAILURE);
@@ -194,6 +201,10 @@ int main(int argc, char *argv[]) {
 	// Parse all customers into a struct array
 	int i = 0;
 	while ((getline(&line, &len, fp)) != -1) {
+		// Bad input with N higher than the actual # of customers
+		if(NCustomers < i-1){
+			break;
+		}
 		int num_parsed = sscanf(line, "%d:%d,%d,%d", &cus_info[i].user_id, &cus_info[i].class_type, &cus_info[i].arrival_time, &cus_info[i].service_time);
 
 		if (num_parsed != 4){
