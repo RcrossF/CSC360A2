@@ -63,11 +63,12 @@ double getCurrentSimulationTime(){
 
 // function entry for customer threads
 void * customer_entry(void * cus_info){
+	double wait_start_time;
 	struct customer_info * p_myInfo = (struct customer_info *) cus_info;
 	sleep(p_myInfo->arrival_time / 10);
 	fprintf(stdout, "A customer arrives: customer ID %2d. \n", p_myInfo->user_id);
 	
-	double wait_start_time = getCurrentSimulationTime();
+	wait_start_time = getCurrentSimulationTime();
 	pthread_cond_t * selected_queue_cond = (p_myInfo->class_type == 0) ? &queue_econ : &queue_biz;
 	pthread_mutex_t * selected_queue_mtx = (p_myInfo->class_type == 0) ? &queue_econ_lock : &queue_biz_lock;
 
@@ -148,12 +149,11 @@ void *clerk_entry(void * clerkNum){
 }
 
 
-
-
 int main(int argc, char *argv[]) {
 	gettimeofday(&init_time, NULL); // record simulation start time
-
-	long NCustomers; // Defined after we read the first line of input
+	long NCustomers = 0; // Defined after we read the first line of input
+	long NEconomy = 0;
+	long NBusiness = 0;
 	FILE *fp;
 	char * line = NULL;
     size_t len = 0;
@@ -170,14 +170,14 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
     }
 
-	// Initialize clerk conds
-	for(int i=0;i<NCLERKS;i++){
-		pthread_cond_init(&clerk_conds[i], NULL);
-	}
-
 	if (argc != 2){
 		printf("Usage: ACS <file.txt>");
 		exit(EXIT_FAILURE);
+	}
+
+	// Initialize clerk conds
+	for(int i=0;i<NCLERKS;i++){
+		pthread_cond_init(&clerk_conds[i], NULL);
 	}
 
 	// Parse input and build needed data structures
@@ -220,6 +220,10 @@ int main(int argc, char *argv[]) {
 			printf("Negative arrival time in customer with ID %d\n", cus_info[i].user_id);
 			exit(EXIT_FAILURE);
 		}
+
+		// Set economy and business counters for average wait times
+		(cus_info[i].class_type == 0) ? NEconomy++:NBusiness++;
+
 		i++;
 	}
 
@@ -248,10 +252,6 @@ int main(int argc, char *argv[]) {
 	for(int i = 0; i < NCustomers; i++){
 		pthread_join(cus_threads[i], NULL);
 	}
-	// wait for all clerk threads to terminate
-	for(int i = 0; i < NCLERKS; i++){
-		pthread_join(clerk_threads[i], NULL);
-	}
 
 	pthread_mutex_destroy(&wait_time_lock);
 	pthread_mutex_destroy(&queue_len_lock);
@@ -261,5 +261,12 @@ int main(int argc, char *argv[]) {
 	pthread_cond_destroy(&queue_biz);
 	
 	// calculate the average waiting time of all customers
+	float avg_wait = (float) (wait_times[0] + wait_times[1]) / NCustomers;
+	float econ_wait = (float) (wait_times[0]) / NEconomy;
+	float biz_wait = (float) (wait_times[1]) / NBusiness;
+	printf("The average wait time for all customers: %.2fs\n", avg_wait);
+	printf("The average wait time for economy customers: %.2fs\n", econ_wait);
+	printf("The average wait time for business customers: %.2fs\n", biz_wait);
+	
 	return 0;
 }
