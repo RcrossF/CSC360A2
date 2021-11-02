@@ -2,7 +2,7 @@
 all: acs
 
 acs: ACS.c
-	gcc-9 -Wall ACS.c -lpthread -o ACS -g
+	gcc -Wall ACS.c -lpthread -o ACS -g
 
 
 .PHONY clean:
