@@ -160,7 +160,7 @@ void *clerk_entry(void * clerkNum){
 		pthread_mutex_t * selected_queue_mtx = (queue_length[BUSINESS] == 0) ? &queue_econ_lock : &queue_biz_lock;
 		pthread_mutex_unlock(&queue_lock);
 		
-		pthread_mutex_lock(selected_queue_mtx);
+		//pthread_mutex_lock(selected_queue_mtx);
 
 		pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
 		pthread_mutex_lock(&chosen_cust_lock);
@@ -175,7 +175,7 @@ void *clerk_entry(void * clerkNum){
 		pthread_mutex_unlock(&queue_lock);
 		calling_clerk = *clerk_id;
 		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
-		pthread_mutex_unlock(selected_queue_mtx);
+		//pthread_mutex_unlock(selected_queue_mtx);
 		
 		pthread_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
 		//printf("\nCustomer done: clerk %d\n", *clerk_id);
