@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <sys/time.h>
 
 #define NCLERKS 5
@@ -29,6 +30,8 @@ pthread_mutex_t queue_econ_lock;
 pthread_mutex_t queue_biz_lock;
 pthread_mutex_t calling_clerk_lock;
 pthread_mutex_t chosen_cust_lock;
+sem_t calling_clerk_sem;
+sem_t chosen_cust_sem;
 pthread_cond_t queue_econ = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queue_biz = PTHREAD_COND_INITIALIZER;
 pthread_cond_t clerk_conds[NCLERKS];
@@ -113,12 +116,14 @@ void * customer_entry(void * cus_info){
 		}
 	}
 	pthread_mutex_unlock(&queue_lock);
-	pthread_mutex_unlock(&chosen_cust_lock);
+	//pthread_mutex_unlock(&chosen_cust_lock);
+	sem_post(&chosen_cust_sem);
 	pthread_mutex_unlock(selected_queue_mtx); //TODO: Remove this line?
 	
 	// Find out the clerk that woke us
 	int clerk = calling_clerk;
-	pthread_mutex_unlock(&calling_clerk_lock);
+	sem_post(&calling_clerk_sem);
+	//pthread_mutex_unlock(&calling_clerk_lock);
 
 	// Update wait time tracker
 	double service_start_time = getCurrentSimulationTime();
@@ -161,9 +166,8 @@ void *clerk_entry(void * clerkNum){
 		pthread_mutex_unlock(&queue_lock);
 		
 		//pthread_mutex_lock(selected_queue_mtx);
-
-		pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
-		pthread_mutex_lock(&chosen_cust_lock);
+		sem_wait(&chosen_cust_sem);
+		//pthread_mutex_lock(&chosen_cust_lock);
 		pthread_mutex_lock(&queue_lock);
 		if(queue_length[BUSINESS] != 0){
 			chosen_cust = dequeue(BUSINESS);
@@ -171,8 +175,10 @@ void *clerk_entry(void * clerkNum){
 		else{
 			chosen_cust = dequeue(ECONOMY);
 		}
-		
 		pthread_mutex_unlock(&queue_lock);
+
+		sem_wait(&calling_clerk_sem);
+		//pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
 		calling_clerk = *clerk_id;
 		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
 		//pthread_mutex_unlock(selected_queue_mtx);
@@ -203,13 +209,15 @@ int main(int argc, char *argv[]) {
 	back[1] = -1;
 
 	// Initialize mutexes
-	if (pthread_mutex_init(&start_time_lock, NULL) != 0 &&
-		pthread_mutex_init(&wait_time_lock, NULL) != 0 &&
-		pthread_mutex_init(&queue_lock, NULL) != 0 &&
-		pthread_mutex_init(&queue_econ_lock, NULL) != 0 &&
-		pthread_mutex_init(&queue_biz_lock, NULL) != 0 &&
-		pthread_mutex_init(&chosen_cust_lock, NULL) != 0 &&
-		pthread_mutex_init(&calling_clerk_lock, NULL) != 0)
+	if (pthread_mutex_init(&start_time_lock, NULL) != 0 ||
+		pthread_mutex_init(&wait_time_lock, NULL) != 0 ||
+		pthread_mutex_init(&queue_lock, NULL) != 0 ||
+		pthread_mutex_init(&queue_econ_lock, NULL) != 0 ||
+		pthread_mutex_init(&queue_biz_lock, NULL) != 0 ||
+		pthread_mutex_init(&chosen_cust_lock, NULL) != 0 ||
+		pthread_mutex_init(&calling_clerk_lock, NULL) != 0 ||
+		sem_init(&calling_clerk_sem, 0, 1) != 0 ||
+		sem_init(&chosen_cust_sem, 0, 1) != 0)
 	{
 		printf("\n Mutex init failed\n");
 		exit(EXIT_FAILURE);
@@ -305,6 +313,8 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_destroy(&chosen_cust_lock);
 	pthread_cond_destroy(&queue_econ);
 	pthread_cond_destroy(&queue_biz);
+	sem_destroy(&calling_clerk_sem);
+	sem_destroy(&chosen_cust_sem);
 	
 	// calculate the average waiting time of all customers
 	float avg_wait = (float) (wait_times[0] + wait_times[1]) / NCustomers;
