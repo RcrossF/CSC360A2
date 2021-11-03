@@ -117,14 +117,12 @@ void * customer_entry(void * cus_info){
 		}
 	}
 	pthread_mutex_unlock(&queue_lock);
-	//pthread_mutex_unlock(&chosen_cust_lock);
 	sem_post(&chosen_cust_sem);
-	pthread_mutex_unlock(selected_queue_mtx); //TODO: Remove this line?
+	pthread_mutex_unlock(selected_queue_mtx);
 	
 	// Find out the clerk that woke us
 	int clerk = calling_clerk;
 	sem_post(&calling_clerk_sem);
-	//pthread_mutex_unlock(&calling_clerk_lock);
 
 	// Update wait time tracker
 	double service_start_time = getCurrentSimulationTime();
@@ -133,18 +131,11 @@ void * customer_entry(void * cus_info){
 	pthread_mutex_unlock(&wait_time_lock);
 
 	fprintf(stdout, "A clerk starts serving a customer: start time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_start_time, p_myInfo->user_id, clerk);
-	
-	// Update queue length now that customer is in service
-	// pthread_mutex_lock(&queue_lock);
-	// dequeue(p_myInfo->class_type);
-	// pthread_mutex_unlock(&queue_lock);
 
 	usleep(p_myInfo->service_time * 100000);
 	
-	double service_end_time = getCurrentSimulationTime();
-	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_end_time, p_myInfo->user_id, clerk);
+	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", getCurrentSimulationTime(), p_myInfo->user_id, clerk);
 	
-	//fprintf(stdout, "\nCustomer signalling clerk %d\n", (clerk));
 	pthread_cond_signal(&clerk_conds[(clerk-1)]); // Notify the clerk that service is finished, it can serve another customer
 	
 	pthread_exit(NULL);
@@ -169,9 +160,7 @@ void *clerk_entry(void * clerkNum){
 		pthread_mutex_t * selected_queue_mtx = (queue_length[BUSINESS] == 0) ? &queue_econ_lock : &queue_biz_lock;
 		pthread_mutex_unlock(&queue_lock);
 		
-		//pthread_mutex_lock(selected_queue_mtx);
-		sem_wait(&chosen_cust_sem);
-		//pthread_mutex_lock(&chosen_cust_lock);
+		sem_wait(&chosen_cust_sem); // Semaphore unlocked after winning customer compares ID
 		pthread_mutex_lock(&queue_lock);
 		if(queue_length[BUSINESS] != 0){
 			chosen_cust = dequeue(BUSINESS);
@@ -181,15 +170,13 @@ void *clerk_entry(void * clerkNum){
 		}
 		pthread_mutex_unlock(&queue_lock);
 
-		sem_wait(&calling_clerk_sem);
-		//pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
+		sem_wait(&calling_clerk_sem); // Semaphore unlocked after customer reads clerk id
+		
 		calling_clerk = *clerk_id;
 		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
 		pthread_mutex_unlock(&clerk_service_lock);
-		//pthread_mutex_unlock(selected_queue_mtx);
 		
 		pthread_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
-		//printf("\nCustomer done: clerk %d\n", *clerk_id);
 	}
 	
 	pthread_exit(NULL);
