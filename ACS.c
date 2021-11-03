@@ -30,6 +30,7 @@ pthread_mutex_t queue_econ_lock;
 pthread_mutex_t queue_biz_lock;
 pthread_mutex_t calling_clerk_lock;
 pthread_mutex_t chosen_cust_lock;
+pthread_mutex_t clerk_service_lock;
 sem_t calling_clerk_sem;
 sem_t chosen_cust_sem;
 pthread_cond_t queue_econ = PTHREAD_COND_INITIALIZER;
@@ -157,10 +158,13 @@ void *clerk_entry(void * clerkNum){
 	while(1){
 		// clerk is idle now
 		// If both queues are empty do nothing
+		pthread_mutex_lock(&clerk_service_lock);
 		if((queue_length[0] == 0) && (queue_length[1] == 0)){
+			pthread_mutex_unlock(&clerk_service_lock);
 			continue;
 		}
-		pthread_mutex_lock(&queue_lock);		
+
+		pthread_mutex_lock(&queue_lock);
 		pthread_cond_t * selected_queue_cond = (queue_length[BUSINESS] == 0) ? &queue_econ : &queue_biz;
 		pthread_mutex_t * selected_queue_mtx = (queue_length[BUSINESS] == 0) ? &queue_econ_lock : &queue_biz_lock;
 		pthread_mutex_unlock(&queue_lock);
@@ -181,6 +185,7 @@ void *clerk_entry(void * clerkNum){
 		//pthread_mutex_lock(&calling_clerk_lock); // Mutex unlocked after customer reads clerk id
 		calling_clerk = *clerk_id;
 		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
+		pthread_mutex_unlock(&clerk_service_lock);
 		//pthread_mutex_unlock(selected_queue_mtx);
 		
 		pthread_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
@@ -216,6 +221,7 @@ int main(int argc, char *argv[]) {
 		pthread_mutex_init(&queue_biz_lock, NULL) != 0 ||
 		pthread_mutex_init(&chosen_cust_lock, NULL) != 0 ||
 		pthread_mutex_init(&calling_clerk_lock, NULL) != 0 ||
+		pthread_mutex_init(&clerk_service_lock, NULL) != 0 ||
 		sem_init(&calling_clerk_sem, 0, 1) != 0 ||
 		sem_init(&chosen_cust_sem, 0, 1) != 0)
 	{
@@ -311,6 +317,7 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_destroy(&queue_econ_lock);
 	pthread_mutex_destroy(&queue_biz_lock);
 	pthread_mutex_destroy(&chosen_cust_lock);
+	pthread_mutex_destroy(&clerk_service_lock);
 	pthread_cond_destroy(&queue_econ);
 	pthread_cond_destroy(&queue_biz);
 	sem_destroy(&calling_clerk_sem);
