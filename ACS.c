@@ -116,24 +116,29 @@ void * customer_entry(void * cus_info){
 			exit(EXIT_FAILURE);
 		}
 	}
-	pthread_mutex_unlock(&queue_lock);
-	sem_post(&chosen_cust_sem);
-	pthread_mutex_unlock(selected_queue_mtx);
-	
 	// Find out the clerk that woke us
 	int clerk = calling_clerk;
 	sem_post(&calling_clerk_sem);
 
 	// Update wait time tracker
 	double service_start_time = getCurrentSimulationTime();
+
+	fprintf(stdout, "A clerk starts serving a customer: start time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_start_time, p_myInfo->user_id, clerk);
+	
+	// Unblock other customers
+	pthread_mutex_unlock(&queue_lock);
+	sem_post(&chosen_cust_sem);
+	pthread_mutex_unlock(selected_queue_mtx);
+	
+	// Update wait time counter now that other threads unblocked
 	pthread_mutex_lock(&wait_time_lock);
 	wait_times[p_myInfo->class_type] += service_start_time - wait_start_time;
 	pthread_mutex_unlock(&wait_time_lock);
 
-	fprintf(stdout, "A clerk starts serving a customer: start time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_start_time, p_myInfo->user_id, clerk);
-
+	// We are in service, wait
 	usleep(p_myInfo->service_time * 100000);
 	
+	// Service done
 	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", getCurrentSimulationTime(), p_myInfo->user_id, clerk);
 	
 	pthread_cond_signal(&clerk_conds[(clerk-1)]); // Notify the clerk that service is finished, it can serve another customer
