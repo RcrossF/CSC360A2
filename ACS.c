@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <errno.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/time.h>
@@ -71,22 +72,84 @@ long safe_str2long(char* str){
 	return ret;
 }
 
+void safe_mutex_lock(pthread_mutex_t * mtx){
+	if(pthread_mutex_lock(mtx) != 0){
+		perror("Error locking mutex: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_mutex_unlock(pthread_mutex_t * mtx){
+	if(pthread_mutex_unlock(mtx) != 0){
+		perror("Error unlocking mutex: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_sem_wait(sem_t * sem){
+	if(sem_wait(sem) != 0){
+		perror("Error waiting on semaphore: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_sem_post(sem_t * sem){
+	if(sem_post(sem) != 0){
+		perror("Error posting semaphore: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_cond_wait(pthread_cond_t * cond, pthread_mutex_t * mtx){
+	if(pthread_cond_wait(cond, mtx) != 0){
+		perror("Error waiting on convar: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_cond_signal(pthread_cond_t * cond){
+	if(pthread_cond_signal(cond) != 0){
+		perror("Error signalling convar: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_cond_broadcast(pthread_cond_t * cond){
+	if(pthread_cond_broadcast(cond) != 0){
+		perror("Error broadcasting convar: ");
+		exit(EXIT_FAILURE);
+	}
+	return;
+}
+
+void safe_usleep(__useconds_t time){
+	if(usleep(time) != 0){
+		perror("Error sleeping: ");
+		exit(EXIT_FAILURE);
+	}
+}
+
 double getCurrentSimulationTime(){
 	struct timeval cur_time;
 	double cur_secs, init_secs;
 	
-	pthread_mutex_lock(&start_time_lock);
+	safe_mutex_lock(&start_time_lock);
 	init_secs = (init_time.tv_sec + (double) init_time.tv_usec / 1000000);
-	pthread_mutex_unlock(&start_time_lock);
+	safe_mutex_unlock(&start_time_lock);
 	
 	gettimeofday(&cur_time, NULL);
-	pthread_mutex_lock(&start_time_lock);
+	safe_mutex_lock(&start_time_lock);
 	cur_secs = (cur_time.tv_sec + (double) cur_time.tv_usec / 1000000);
-	pthread_mutex_unlock(&start_time_lock);
+	safe_mutex_unlock(&start_time_lock);
 
 	return cur_secs - init_secs;
 }
-
 // End Helpers //
 
 
@@ -94,30 +157,27 @@ double getCurrentSimulationTime(){
 void * customer_entry(void * cus_info){
 	double wait_start_time;
 	struct customer_info * p_myInfo = (struct customer_info *) cus_info;
-	usleep(p_myInfo->arrival_time * 100000);
+	safe_usleep(p_myInfo->arrival_time * 100000);
 	fprintf(stdout, "A customer arrives: customer ID %2d. \n", p_myInfo->user_id);
 	
 	wait_start_time = getCurrentSimulationTime();
 	pthread_cond_t * selected_queue_cond = (p_myInfo->class_type == ECONOMY) ? &queue_econ : &queue_biz;
 	pthread_mutex_t * selected_queue_mtx = (p_myInfo->class_type == ECONOMY) ? &queue_econ_lock : &queue_biz_lock;
 
-	pthread_mutex_lock(selected_queue_mtx);
+	safe_mutex_lock(selected_queue_mtx);
 	
-	pthread_mutex_lock(&queue_lock);
+	safe_mutex_lock(&queue_lock);
 	enqueue(p_myInfo->user_id, p_myInfo->class_type);	
 	fprintf(stdout, "Customer %d enters a queue: %1d, this queue length is now %2d. \n", p_myInfo->user_id, p_myInfo->class_type, queue_length[p_myInfo->class_type]);
-	pthread_mutex_unlock(&queue_lock);
+	safe_mutex_unlock(&queue_lock);
 
 	// Wait for clerk to be available
 	while(chosen_cust != p_myInfo->user_id){
-		if(pthread_cond_wait(selected_queue_cond, selected_queue_mtx) != 0){
-			printf("Thread for customer %d error waking.", p_myInfo->user_id);
-			exit(EXIT_FAILURE);
-		}
+		safe_cond_wait(selected_queue_cond, selected_queue_mtx);
 	}
 	// Find out the clerk that woke us
 	int clerk = calling_clerk;
-	sem_post(&calling_clerk_sem);
+	safe_sem_post(&calling_clerk_sem);
 
 	// Update wait time tracker
 	double service_start_time = getCurrentSimulationTime();
@@ -125,22 +185,22 @@ void * customer_entry(void * cus_info){
 	fprintf(stdout, "A clerk starts serving a customer: start time %.2f, the customer ID %2d, the clerk ID %1d. \n", service_start_time, p_myInfo->user_id, clerk);
 	
 	// Unblock other customers
-	pthread_mutex_unlock(&queue_lock);
-	sem_post(&chosen_cust_sem);
-	pthread_mutex_unlock(selected_queue_mtx);
+	safe_mutex_unlock(&queue_lock);
+	safe_sem_post(&chosen_cust_sem);
+	safe_mutex_unlock(selected_queue_mtx);
 	
 	// Update wait time counter now that other threads unblocked
-	pthread_mutex_lock(&wait_time_lock);
+	safe_mutex_lock(&wait_time_lock);
 	wait_times[p_myInfo->class_type] += service_start_time - wait_start_time;
-	pthread_mutex_unlock(&wait_time_lock);
+	safe_mutex_unlock(&wait_time_lock);
 
 	// We are in service, wait
-	usleep(p_myInfo->service_time * 100000);
+	safe_usleep(p_myInfo->service_time * 100000);
 	
 	// Service done
 	fprintf(stdout, "A clerk finishes serving a customer: end time %.2f, the customer ID %2d, the clerk ID %1d. \n", getCurrentSimulationTime(), p_myInfo->user_id, clerk);
 	
-	pthread_cond_signal(&clerk_conds[(clerk-1)]); // Notify the clerk that service is finished, it can serve another customer
+	safe_cond_signal(&clerk_conds[(clerk-1)]); // Notify the clerk that service is finished, it can serve another customer
 	
 	pthread_exit(NULL);
 	return NULL;
@@ -153,34 +213,34 @@ void *clerk_entry(void * clerkNum){
 	while(1){
 		// clerk is idle now
 		// If both queues are empty do nothing
-		pthread_mutex_lock(&clerk_service_lock);
+		safe_mutex_lock(&clerk_service_lock);
 		if((queue_length[0] == 0) && (queue_length[1] == 0)){
-			pthread_mutex_unlock(&clerk_service_lock);
+			safe_mutex_unlock(&clerk_service_lock);
 			continue;
 		}
 
-		pthread_mutex_lock(&queue_lock);
+		safe_mutex_lock(&queue_lock);
 		pthread_cond_t * selected_queue_cond = (queue_length[BUSINESS] == 0) ? &queue_econ : &queue_biz;
 		pthread_mutex_t * selected_queue_mtx = (queue_length[BUSINESS] == 0) ? &queue_econ_lock : &queue_biz_lock;
-		pthread_mutex_unlock(&queue_lock);
+		safe_mutex_unlock(&queue_lock);
 		
-		sem_wait(&chosen_cust_sem); // Semaphore unlocked after winning customer compares ID
-		pthread_mutex_lock(&queue_lock);
+		safe_sem_wait(&chosen_cust_sem); // Semaphore unlocked after winning customer compares ID
+		safe_mutex_lock(&queue_lock);
 		if(queue_length[BUSINESS] != 0){
 			chosen_cust = dequeue(BUSINESS);
 		}
 		else{
 			chosen_cust = dequeue(ECONOMY);
 		}
-		pthread_mutex_unlock(&queue_lock);
+		safe_mutex_unlock(&queue_lock);
 
-		sem_wait(&calling_clerk_sem); // Semaphore unlocked after customer reads clerk id
+		safe_sem_wait(&calling_clerk_sem); // Semaphore unlocked after customer reads clerk id
 		
 		calling_clerk = *clerk_id;
-		pthread_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
-		pthread_mutex_unlock(&clerk_service_lock);
+		safe_cond_broadcast(selected_queue_cond); // Awake the customer (the one enter into the queue first)
+		safe_mutex_unlock(&clerk_service_lock);
 		
-		pthread_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
+		safe_cond_wait(&clerk_conds[((*clerk_id)-1)], selected_queue_mtx); // wait the customer to finish its service, clerk busy
 	}
 	
 	pthread_exit(NULL);
@@ -225,13 +285,16 @@ int main(int argc, char *argv[]) {
 
 	// Initialize clerk conds
 	for(int i=0;i<NCLERKS;i++){
-		pthread_cond_init(&clerk_conds[i], NULL);
+		if(pthread_cond_init(&clerk_conds[i], NULL) != 0){
+			perror("Error initializing condvar: ");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	// Parse input and build needed data structures
 	fp = fopen(argv[1], "r");
 	if (fp == NULL){
-		printf("Error opening file. Check that it exists.\n");
+		perror("Error opening file: ");
 		exit(EXIT_FAILURE);
 	}
 		
@@ -275,7 +338,10 @@ int main(int argc, char *argv[]) {
 		i++;
 	}
 
-	fclose(fp);
+	if(fclose(fp) != 0){
+		perror("Error closing file: ");
+		exit(EXIT_FAILURE);
+	}
 
 	// Create clerk threads
 	pthread_t clerk_threads[NCLERKS];
@@ -298,18 +364,11 @@ int main(int argc, char *argv[]) {
 	}
 	// wait for all customer threads to terminate
 	for(int i = 0; i < NCustomers; i++){
-		pthread_join(cus_threads[i], NULL);
+		if(pthread_join(cus_threads[i], NULL) != 0){
+			perror("Error joining thread: ");
+			exit(EXIT_FAILURE);
+		}
 	}
-
-	pthread_mutex_destroy(&wait_time_lock);
-	pthread_mutex_destroy(&queue_lock);
-	pthread_mutex_destroy(&queue_econ_lock);
-	pthread_mutex_destroy(&queue_biz_lock);
-	pthread_mutex_destroy(&clerk_service_lock);
-	pthread_cond_destroy(&queue_econ);
-	pthread_cond_destroy(&queue_biz);
-	sem_destroy(&calling_clerk_sem);
-	sem_destroy(&chosen_cust_sem);
 	
 	// calculate the average waiting time of all customers
 	float avg_wait = (float) (wait_times[0] + wait_times[1]) / NCustomers;
