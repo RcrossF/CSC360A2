@@ -371,6 +371,15 @@ int main(int argc, char *argv[]) {
 	}
 	
 	// calculate the average waiting time of all customers
+	// Edge case where no customers showed up for a class
+	if(NBusiness == 0){
+		wait_times[1] = 0;
+		NBusiness = 1;
+	}
+	if(NEconomy == 0){
+		wait_times[0] = 0;
+		NEconomy = 1;
+	}
 	float avg_wait = (float) (wait_times[0] + wait_times[1]) / NCustomers;
 	float econ_wait = (float) (wait_times[0]) / NEconomy;
 	float biz_wait = (float) (wait_times[1]) / NBusiness;
