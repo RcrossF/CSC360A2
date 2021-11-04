@@ -28,8 +28,6 @@ pthread_mutex_t wait_time_lock;
 pthread_mutex_t queue_lock;
 pthread_mutex_t queue_econ_lock;
 pthread_mutex_t queue_biz_lock;
-pthread_mutex_t calling_clerk_lock;
-pthread_mutex_t chosen_cust_lock;
 pthread_mutex_t clerk_service_lock;
 sem_t calling_clerk_sem;
 sem_t chosen_cust_sem;
@@ -210,9 +208,7 @@ int main(int argc, char *argv[]) {
 		pthread_mutex_init(&wait_time_lock, NULL) != 0 ||
 		pthread_mutex_init(&queue_lock, NULL) != 0 ||
 		pthread_mutex_init(&queue_econ_lock, NULL) != 0 ||
-		pthread_mutex_init(&queue_biz_lock, NULL) != 0 ||
-		pthread_mutex_init(&chosen_cust_lock, NULL) != 0 ||
-		pthread_mutex_init(&calling_clerk_lock, NULL) != 0 ||
+		pthread_mutex_init(&queue_biz_lock, NULL) != 0 ||	
 		pthread_mutex_init(&clerk_service_lock, NULL) != 0 ||
 		sem_init(&calling_clerk_sem, 0, 1) != 0 ||
 		sem_init(&chosen_cust_sem, 0, 1) != 0)
@@ -308,7 +304,6 @@ int main(int argc, char *argv[]) {
 	pthread_mutex_destroy(&queue_lock);
 	pthread_mutex_destroy(&queue_econ_lock);
 	pthread_mutex_destroy(&queue_biz_lock);
-	pthread_mutex_destroy(&chosen_cust_lock);
 	pthread_mutex_destroy(&clerk_service_lock);
 	pthread_cond_destroy(&queue_econ);
 	pthread_cond_destroy(&queue_biz);
