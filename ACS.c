@@ -20,17 +20,17 @@ struct customer_info{ /// use this struct to record the customer information rea
  
 static struct timeval init_time;
 double wait_times[2];
-int queue_length[2];// variable stores the real-time queue length information
+int queue_length[2]; // Stores the real-time queue length information
 int calling_clerk;
 int chosen_cust;
-pthread_mutex_t start_time_lock;
-pthread_mutex_t wait_time_lock;
-pthread_mutex_t queue_lock;
-pthread_mutex_t queue_econ_lock;
-pthread_mutex_t queue_biz_lock;
-pthread_mutex_t clerk_service_lock;
-sem_t calling_clerk_sem;
-sem_t chosen_cust_sem;
+pthread_mutex_t start_time_lock; // Used by helper to avoid race condition
+pthread_mutex_t wait_time_lock; // Used when updating overall wait times for customers
+pthread_mutex_t queue_lock; // Used when editing customer order queue
+pthread_mutex_t queue_econ_lock; // Used when editing economy queue
+pthread_mutex_t queue_biz_lock; // Used when editing business queue
+pthread_mutex_t clerk_service_lock; // Used to stop 2 clerks from trying to service the same customer
+sem_t calling_clerk_sem; // Used when passing calling clerk to customer
+sem_t chosen_cust_sem; // Used when passing who is at the front of the line to customers
 pthread_cond_t queue_econ = PTHREAD_COND_INITIALIZER;
 pthread_cond_t queue_biz = PTHREAD_COND_INITIALIZER;
 pthread_cond_t clerk_conds[NCLERKS];
@@ -40,7 +40,8 @@ int track_queue[2][QUEUE_MAX];
 int front[2];
 int back[2];
 int num_waiting[2];
-// Helpers
+
+// Helpers //
 
 // Queue helpers
 void enqueue(int data, int queue) {
@@ -86,10 +87,10 @@ double getCurrentSimulationTime(){
 	return cur_secs - init_secs;
 }
 
-// End Helpers
+// End Helpers //
 
 
-// function entry for customer threads
+// Entry for customer threads
 void * customer_entry(void * cus_info){
 	double wait_start_time;
 	struct customer_info * p_myInfo = (struct customer_info *) cus_info;
@@ -145,7 +146,7 @@ void * customer_entry(void * cus_info){
 	return NULL;
 }
 
-// function entry for clerk threads
+// Entry for clerk threads
 void *clerk_entry(void * clerkNum){
 	int * clerk_id = (int *) clerkNum;
 
